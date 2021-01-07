@@ -1,0 +1,178 @@
+title: IAB Integration;
+
+msc=Dinand;
+compress=No;
+defstyle arrow [text.ident=left];
+
+ue: UE;
+node4: IAB-Node 4 {
+    du4: DU 4;
+    mt4: MT 4;
+};
+node3: IAB-Node 3 {
+    du3: DU 3;
+    mt3: MT 3;
+};
+node2: IAB-Node 2 {
+    du2: DU 2;
+    mt2: MT 2;
+};
+node1: IAB-Node 1 {
+    du1: DU 1;
+    mt1: MT 1;
+};
+donor: IAB-Donor {
+    ddu: DU;
+    cp: CP;
+    up: UP;
+};
+mn: MeNB;
+mme: MME;
+gw: S-GW;
+oam: OAM;
+
+{
+    --: IAB Access Control {
+        mme -> mn: \bS1 SETUP RESPONSE\b
+                   IAB Supported;
+
+        mn--mn: Broadcast
+                \bSystemmInformationBlockType1\b
+                iab-Support;
+    };
+}
+{
+    --: Donor DU Setup {
+        ddu -> cp: \bF1 SETUP REQUEST\b
+                   IAB Info IAB-DU (optional)
+                   > IAB STC Info (optional);
+
+        cp -> ddu: \bF1 SETUP RESPONSE\b
+                   BAP Address;
+    };
+};
+
+
+mt1 -> mn: \bRRCConnectionSetupComplete\b
+           iab-NodeIndication;
+
+mn -> mme: \bINITIAL UE MESSAGE\b
+           IAB Node Indication;
+
+mme -> mn: \bINITIAL CONTEXT SETUP REQUEST\b
+           IAB Authorized;
+
+mn--mn: SgNB Addition decision {};
+
+mn -> cp: \bSGNB ADDITION REUQEST\b
+          IAB Node Indication;
+
+cp--up: Bearer Context Setup;
+
+cp--ddu :UE Context Setup;
+
+cp--up: Bearer Context Modification;
+
+cp -> mn: \bSGNB ADDITION REQUEST ACKNOLWEDGE\b;
+
+mn--mt1: \bRRCConectionReconfiguration\b;
+
+--: BAP address configuration {
+    cp -> mt1: \bRRCReconfiguration\b
+               bap-Address;
+
+    node1--node1: Apply BAP address;
+
+    mt1 -> cp: \bRRCReconfigurationComplete\b;
+
+    cp--cp: Update IAB table
+            (BAP Address, MT, IP addresses, DU, Parent)
+            - (\c(blue)BAP 1, MT 1\c(), none, none, \c(blue)Donor-DU\c());
+};
+
+--: IP address allocation & default BH configuration {
+    du1 -> mt1: \iRequest IP addresses\i;
+
+    mt1 -> cp: \bIABOtherInformation\b
+               iab-IP-Request;
+
+    --: Allocate IAB IP addresses by CP {
+        cp--cp: Assign IAB IP addresses;
+    }
+      ..: Allocate IAB IP addresses by DU {
+        cp--ddu: IAB TNL Address Allocation;
+    }
+      ..: Allocate IAB IP addresses by OAM {
+        cp--oam: IAB IP address allocation;
+    };
+
+    cp--cp: Update IAB table
+            (BAP Address, MT, IP addresses, DU, Parent)
+            - (BAP 1, MT 1, \c(blue)IP addresses\c(), none, Donor-DU);
+
+    cp -> ddu: \bUE CONTEXT MODIFICATION REQUEST\b
+               BH RLC Channel to be Setup List
+               > BH QoS Information (choice)
+               >> BH RLC CH QoS
+               >> E-UTRAN BH RLC CH QoS
+               >> Control Plane Traffic Type
+               > BAP Control PDU Channel
+               > Traffic Mapping Information (choice)
+               >> IP to layer2 Traffic Mapping Info
+               Configured BAP Address;
+
+    ddu -> cp: \bUE CONTEXT MODIFICATION RESPONSE\b
+               CellGroupConfig
+               > f1c-TransferPath;
+
+    cp -> mt1: \bRRCReconfiguration\b
+               defaultUL-BAP-RoutingID
+               defaultUL-BH-RLC-Channel
+               iab-IP-AddressToAddModList
+               CellGroupConfig
+               > f1c-TransferPath;
+
+    mt1 -> du1:\iIP addresses\i;
+};
+
+--: IAB-DU Setup {
+    du1 -> mt1: \bF1 SETUP REQUEST\b
+                BAP Address;
+
+    --: F1-C via MN {
+        mt1 -> mn: \bULInformationTransfer\b
+                   dedicatedInfoF1c (= \[IP\] \[SCTP\] F1 SETUP REQUEST);
+
+        mn -> cp: \bF1-C TRAFFIC TRANSFER\b
+                  F1-C Traffic Container (= \[IP\] \[SCTP\] F1 SETUP REQUEST);
+    }
+      ..: F1-C via BH {
+        mt1 -> ddu: \iBAP Data transfer\i
+                    Data = \[IP\] \[SCTP\]  F1 SETUP REQUEST;
+
+        ddu -> cp: \iIP layer data transfer\i
+                   Data = F1 SETUP REQUEST;
+    };
+
+
+    cp--cp: Update IAB table
+            (BAP Address, MT, IP addresses, DU, Parent)
+            - (BAP 1, MT 1, IP addresses, \c(blue)DU\c(), Donor-DU);
+
+    --: F1-C via MN {
+        cp -> mn: \bF1-C TRAFFIC TRANSFER\b
+                  F1-C Traffic Container (= \[IP\] \[SCTP\] F1 SETUP RESPONSE);
+
+        mn -> mt1: \bULInformationTransfer\b
+                   dedicatedInfoF1c (= \[IP\] \[SCTP\] F1 SETUP RESPONSE);
+    }
+      ..: F1-C via BH {
+        cp -> ddu: \iIP layer data transfer\i
+                   Data = F1 SETUP RESPONSE;
+
+        ddu -> mt1: \iBAP Data transfer\i
+                    Data = \[IP\] \[SCTP\]  F1 SETUP RESPONSE;
+    };
+
+    mt1 -> du1: \bF1 SETUP RESPONSE\b;
+};
